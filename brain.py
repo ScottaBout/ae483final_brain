@@ -14,8 +14,8 @@ drone_data_list = [DroneData(), DroneData()]  # global variable
 @app.route("/drone_data")
 def drone_data():
     drone_id = int(request.args.get("drone_id"))
-    drone_data_list[0].ip = '192.168.1.157'
-    drone_data_list[1].ip = '192.168.1.158'
+    drone_data_list[0].ip = '192.168.1.157'  # TODO change ip address to drone address
+    drone_data_list[1].ip = '10.194.94.228'  # TODO change ip address to drone address
     payload = {}
     for v in ['x', 'y', 'z']:
         value = request.args.get(v)
