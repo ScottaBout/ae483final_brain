@@ -4,7 +4,7 @@ import logging
 
 from drone_data import DroneData
 
-OPTITRACK = False # if false, assumes optitrack data equals drone data
+OPTITRACK = False # if false, assumes opti-track data equals drone data
 
 app = Flask(__name__)
 
@@ -14,6 +14,10 @@ drone_data_list[1].ip = '10.194.94.228'  # TODO change ip address to drone addre
 
 @app.route("/drone_data")
 def drone_data():
+    """
+    Extract the drone_data x, y and z from the http request, sent to here
+    by the Drone Client
+    """
     drone_id = int(request.args.get("drone_id"))
     if drone_id is None:
         logging.error('Missing drone_id')
@@ -47,6 +51,10 @@ def drone_data():
 
 
 def recalculate():
+    """
+    Based on drone_data from both drones, recalculate target drone
+    positions and send to both drones
+    """
     drone0 = drone_data_list[0]
     drone1 = drone_data_list[1]
     if drone0.start_x is None or drone1.start_x is None:
@@ -70,9 +78,8 @@ def recalculate():
 
 def send_to_drone(drone_data: DroneData):
     """
-    Send target positioning data to drone with drone_id integer
+    Send drone data to drone
     :param drone_data:
-    :return:
     """
     if drone_data.ip != '':
         try:
