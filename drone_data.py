@@ -28,7 +28,10 @@ class DroneData:
             'target_y': str(self.target_y),
             'target_z': str(self.target_z),
             'opti_x': str(self.opti_x),
-            'opti_y': str(self.opti_y)
+            'opti_y': str(self.opti_y),
+            'start_x': str(self.start_x),
+            'start_y': str(self.start_y),
+            'start_z': str(self.start_z)
         }
 
     def real_x(self):

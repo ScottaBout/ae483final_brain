@@ -5,14 +5,15 @@ import logging
 from drone_data import DroneData
 
 OPTITRACK = False  # if false, assumes optitrack data equals drone data
+ONEDRONE = True
 
 app = Flask(__name__)
 
 drone_data_list = [DroneData(), DroneData()]  # global variable
 
-drone_data_list[0].ip = '192.168.1.158'  # TODO change ip address to drone address
-drone_data_list[1].ip = '192.168.1.157'  # TODO change ip address to drone address
-BRAIN_PORT = '8080'
+drone_data_list[0].ip = '10.183.7.122'  # TODO change ip address to drone address
+drone_data_list[1].ip = '10.183.7.122'  # TODO change ip address to drone address
+BRAIN_PORT = '8100'
 CLIENT_PORT = '8080'
 
 
@@ -44,6 +45,7 @@ def drone_data():
             drone_data_list[drone_id].opti_z = z
             if drone_data_list[drone_id].start_z is None:
                 drone_data_list[drone_id].start_z = z
+    logging.debug(drone_data_list[drone_id].string_dict())
     response = f'Drone: {drone_id} : ip = {drone_data_list[drone_id].ip}, x = {drone_data_list[drone_id].x}, y = {drone_data_list[drone_id].y}, z = {drone_data_list[drone_id].z} '
     logging.info(response)
     recalculate()
@@ -53,7 +55,7 @@ def drone_data():
 def recalculate():
     logging.info('Starting recalculate')
     drone0 = drone_data_list[0]
-    drone1 = drone_data_list[1]
+    drone1 = drone_data_list[1] if not ONEDRONE else drone0
     if drone0.start_x is None or drone1.start_x is None:
         logging.warning('start_x not set yet - returning from recalculate')
         return
