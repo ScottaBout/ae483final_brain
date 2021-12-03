@@ -12,6 +12,8 @@ drone_data_list = [DroneData(), DroneData()]  # global variable
 
 drone_data_list[0].ip = '192.168.1.158'  # TODO change ip address to drone address
 drone_data_list[1].ip = '192.168.1.157'  # TODO change ip address to drone address
+BRAIN_PORT = '8080'
+CLIENT_PORT = '8080'
 
 
 @app.route("/drone_data")
@@ -45,15 +47,15 @@ def drone_data():
     response = f'Drone: {drone_id} : ip = {drone_data_list[drone_id].ip}, x = {drone_data_list[drone_id].x}, y = {drone_data_list[drone_id].y}, z = {drone_data_list[drone_id].z} '
     logging.info(response)
     recalculate()
-    logging.info('recalculating')
     return Response(response)
 
 
 def recalculate():
-    logging.info('entered recalculation')
+    logging.info('Starting recalculate')
     drone0 = drone_data_list[0]
     drone1 = drone_data_list[1]
     if drone0.start_x is None or drone1.start_x is None:
+        logging.warning('start_x not set yet - returning from recalculate')
         return
     if drone0.real_z() < 0.5:
         logging.info('setting target for drone 0')
@@ -62,15 +64,14 @@ def recalculate():
         logging.info('setting target for drone 1')
         drone1.set_target(drone1.start_x, drone1.start_y, 0.55)
     if drone0.real_z() > 0.5 and drone1.real_z() > 0.5:
+        logging.info('setting target for both drones')
         drone0.set_target(1, 2, 1)
         drone1.set_target(1, 2, 1)
         # h = drone0.heading(drone1)
         # x, y = drone0.relative(2, h)
         # drone1.set_target(x, y, 1)
     send_to_drone(drone0)
-    logging.info('sending to drone 0')
     send_to_drone(drone1)
-    logging.info('sending to drone 1')
 
 
 def send_to_drone(drone_data: DroneData):
@@ -79,24 +80,23 @@ def send_to_drone(drone_data: DroneData):
     :param drone_data:
     :return:
     """
-    logging.info('send to drone activated')
+    logging.info(f'send_to_drone')
     if drone_data.ip != '':
-        logging.info(f'ip found at {drone_data.ip}, trying')
+        logging.info(f'Client IP = {drone_data.ip}')
         try:
-            response = requests.get(f'http://{drone_data.ip}:8000/drone_target', params=drone_data.string_dict())
+            response = requests.get(f'http://{drone_data.ip}:{CLIENT_PORT}/drone_target', params=drone_data.string_dict())
             if response.status_code != 200:
-                logging.info(f'Error code sending request {response.status_code}')
+                logging.warning(f'Error code sending request {response.status_code}')
             else:
-                print('HTTP Connection established')
-                logging.info(f'url: {response.url}')
-                logging.info(f'response: {response.content}')
-        except requests.exceptions.RequestException as err:
-            logging.warning(f'error: {err}')
+                logging.info(f'Successfully sent drone_data: {drone_data}')
+                logging.info(f'Client response: {response.content}')
+        except (requests.exceptions.RequestException, ConnectionError) as err:
+            logging.warning(f'Error sending request to Client: {err}')
     else:
-        print("No IP address yet")
+        logging.warning('No Client IP address yet')
 
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    print('running server on brain')
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    logging.info('Starting web server')
+    app.run(host='0.0.0.0', port=int(BRAIN_PORT), debug=True)
