@@ -69,3 +69,6 @@ class DroneData:
         self.target_x = x - self.real_x() + self.x
         self.target_y = y - self.real_y() + self.y
         self.target_z = z - self.real_z() + self.z
+
+    def __str__(self):
+        return str(self.string_dict())
