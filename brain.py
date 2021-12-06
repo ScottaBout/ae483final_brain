@@ -1,3 +1,8 @@
+import socket
+import struct
+import threading
+import time
+
 from flask import Flask, request, Response
 import requests
 import logging
@@ -7,12 +12,15 @@ from drone_data import DroneData
 OPTITRACK = False  # if false, assumes optitrack data equals drone data
 ONEDRONE = True
 
+OPTI_IP = "192.168.1.103" #need to be the ip address of current device
+UDP_PORT = 1234 #random number
+
 app = Flask(__name__)
 
 drone_data_list = [DroneData(), DroneData()]  # global variable
 
-drone_data_list[0].ip = '10.183.7.122'  # TODO change ip address to drone address
-drone_data_list[1].ip = '10.183.7.122'  # TODO change ip address to drone address
+drone_data_list[0].ip = '10.193.202.198'  # TODO change ip address to drone address
+drone_data_list[1].ip = '10.193.202.198'  # TODO change ip address to drone address
 BRAIN_PORT = '8100'
 CLIENT_PORT = '8080'
 
@@ -97,8 +105,41 @@ def send_to_drone(drone_data: DroneData):
     else:
         logging.warning('No Client IP address yet')
 
+def optitrack():
+    sock = socket.socket(socket.AF_INET,  # Internet
+                         socket.SOCK_DGRAM)  # UDP
+    sock.bind((OPTI_IP, UDP_PORT))
+
+    while True:
+        data, addr = sock.recvfrom(1024)  # buffer size is 1024 bytes
+        # print("received message: %s" % data)
+        [a, b, c, d, e, f, g, h] = struct.unpack('ffffffff', data)  # convert the received data from char to float
+        logging.debug(f'from optitrack: {[a, b, c, d, e, f, g, h]}')
+        x = -a
+        y = c
+        z = b
+        roll = -d
+        yaw = e
+        pitch = -f
+        bodyID = g
+        framecount = h
+        drone_id = int(bodyID)
+        drone_data_list[drone_id].opti_x = x
+        drone_data_list[drone_id].opti_y = y
+        drone_data_list[drone_id].opti_z = z
+        if drone_data_list[drone_id].start_x is None:
+            drone_data_list[drone_id].start_x = x
+        if drone_data_list[drone_id].start_y is None:
+            drone_data_list[drone_id].start_y = y
+        if drone_data_list[drone_id].start_z is None:
+            drone_data_list[drone_id].start_z = z
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
+    if OPTITRACK:
+        thread = threading.Thread(target=optitrack)
+        thread.start()
+    # while True:
+    #     time.sleep(1)
     logging.info('Starting web server')
     app.run(host='0.0.0.0', port=int(BRAIN_PORT), debug=True)
