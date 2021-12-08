@@ -10,19 +10,20 @@ import logging
 from drone_data import DroneData
 
 OPTITRACK = False  # if false, assumes optitrack data equals drone data
-ONEDRONE = True
+ONEDRONE = True  # change to FALSE when working with drones
 
-OPTI_IP = "192.168.1.103" #need to be the ip address of current device
-UDP_PORT = 1234 #random number
+OPTI_IP = "192.168.1.103"  # need to be the ip address of current device
+UDP_PORT = 1234  # random number
 
 app = Flask(__name__)
 
 drone_data_list = [DroneData(), DroneData()]  # global variable
 
-drone_data_list[0].ip = '10.193.202.198'  # TODO change ip address to drone address
-drone_data_list[1].ip = '10.193.202.198'  # TODO change ip address to drone address
+drone_data_list[0].ip = '192.168.1.166'  # TODO change ip address to drone address
+drone_data_list[1].ip = '192.168.1.166'  # TODO change ip address to drone address
 BRAIN_PORT = '8100'
 CLIENT_PORT = '8080'
+CLIENT_PORT2 = '8000'
 
 
 @app.route("/drone_data")
@@ -76,15 +77,15 @@ def recalculate():
     if drone0.real_z() > 0.5 and drone1.real_z() > 0.5:
         logging.info('setting target for both drones')
         drone0.set_target(1, 2, 1)
-        drone1.set_target(1, 2, 1)
+        drone1.set_target(drone0.x, drone0.y, drone0.z)
         # h = drone0.heading(drone1)
         # x, y = drone0.relative(2, h)
         # drone1.set_target(x, y, 1)
-    send_to_drone(drone0)
-    send_to_drone(drone1)
+    send_to_drone(drone0, 0)
+    send_to_drone(drone1, 1)
 
 
-def send_to_drone(drone_data: DroneData):
+def send_to_drone(drone_data: DroneData, id):
     """
     Send target positioning data to drone with drone_id integer
     :param drone_data:
@@ -93,8 +94,9 @@ def send_to_drone(drone_data: DroneData):
     logging.info(f'send_to_drone')
     if drone_data.ip != '':
         logging.info(f'Client IP = {drone_data.ip}')
+        PORT = CLIENT_PORT if id == 0 else CLIENT_PORT2
         try:
-            response = requests.get(f'http://{drone_data.ip}:{CLIENT_PORT}/drone_target', params=drone_data.string_dict())
+            response = requests.get(f'http://{drone_data.ip}:{PORT}/drone_target', params=drone_data.string_dict())
             if response.status_code != 200:
                 logging.warning(f'Error code sending request {response.status_code}')
             else:
@@ -104,6 +106,7 @@ def send_to_drone(drone_data: DroneData):
             logging.warning(f'Error sending request to Client: {err}')
     else:
         logging.warning('No Client IP address yet')
+
 
 def optitrack():
     sock = socket.socket(socket.AF_INET,  # Internet
@@ -133,6 +136,7 @@ def optitrack():
             drone_data_list[drone_id].start_y = y
         if drone_data_list[drone_id].start_z is None:
             drone_data_list[drone_id].start_z = z
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
