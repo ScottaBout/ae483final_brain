@@ -1,68 +1,63 @@
 import socket
 import struct
 import threading
-import time
+# import time
+from typing import Callable
 
-from flask import Flask, request, Response
-import requests
+# from flask import Flask, request, Response
+# import requests
 import logging
 
 from drone_data import DroneData
 
-OPTITRACK = False  # if false, assumes optitrack data equals drone data
+LOGLEVEL = logging.DEBUG
 ONEDRONE = True  # change to FALSE when working with drones
 
-OPTI_IP = "192.168.1.103"  # need to be the ip address of current device
 UDP_PORT = 1234  # random number
-
-app = Flask(__name__)
 
 drone_data_list = [DroneData(), DroneData()]  # global variable
 
-drone_data_list[0].ip = '192.168.1.166'  # TODO change ip address to drone address
-drone_data_list[1].ip = '192.168.1.166'  # TODO change ip address to drone address
+drone_data_list[0].ip = '10.193.202.198'  # TODO change ip address to drone address
+drone_data_list[1].ip = '10.193.202.198'  # TODO change ip address to drone address
 BRAIN_PORT = '8100'
-CLIENT_PORT = '8080'
-CLIENT_PORT2 = '8000'
+CLIENT0_PORT = '8080'
+CLIENT1_PORT = '8000'
 
 
-@app.route("/drone_data")
-def drone_data():
-    drone_id = int(request.args.get("drone_id"))
-    if drone_id is None:
-        logging.error('Missing drone_id')
-        return Response('Missing drone_id', 500)
-    logging.info(f'/drone_data for drone_id {drone_id}')
-    if 'x' in request.args:
-        x = float(request.args.get('x'))
-        drone_data_list[drone_id].x = x
-        if not OPTITRACK:
-            drone_data_list[drone_id].opti_x = x
-            if drone_data_list[drone_id].start_x is None:
-                drone_data_list[drone_id].start_x = x
-    if 'y' in request.args:
-        y = float(request.args.get('y'))
-        drone_data_list[drone_id].y = y
-        if not OPTITRACK:
-            drone_data_list[drone_id].opti_y = y
-            if drone_data_list[drone_id].start_y is None:
-                drone_data_list[drone_id].start_y = y
-    if 'z' in request.args:
-        z = float(request.args.get('z'))
-        drone_data_list[drone_id].z = z
-        if not OPTITRACK:
-            drone_data_list[drone_id].opti_z = z
-            if drone_data_list[drone_id].start_z is None:
-                drone_data_list[drone_id].start_z = z
-    logging.debug(drone_data_list[drone_id].string_dict())
-    response = f'Drone: {drone_id} : ip = {drone_data_list[drone_id].ip}, x = {drone_data_list[drone_id].x}, y = {drone_data_list[drone_id].y}, z = {drone_data_list[drone_id].z} '
-    logging.info(response)
-    recalculate()
-    return Response(response)
+def drone_data_listener(wrap_up: Callable[[], bool]):
+    logging.basicConfig(level=LOGLEVEL)
+    logging.info(f'Starting socket listener')
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.bind(('0.0.0.0', int(BRAIN_PORT)))
+        logging.info(f'Socket connected and listening')
+        while True:
+            data = s.recvfrom(1024)[0]
+            if not data:
+                logging.info('No data received')
+                break
+            else:
+                if len(data) == 16:
+                    # struct contains 1 short (id) and 3 floats, representing x, y and z
+                    (drone_id, x, y, z) = struct.unpack('hfff', data)  # convert the received data from bytes to float
+                    logging.info(f'Incoming = {(drone_id, x, y, z)}')
+                    drone_data = drone_data_list[drone_id]
+                    drone_data.x = x
+                    drone_data.y = y
+                    drone_data.z = z
+                    if drone_data.start_x is None:
+                        drone_data.start_x = x
+                        drone_data.start_y = y
+                        drone_data.start_z = z
+                    recalculate(wrap_up())
+                    if wrap_up():
+                        break
+                else:
+                    logging.warning(f'Received only {len(data)} bytes: {data}')
+    logging.info('Socket listener finished')
 
 
-def recalculate():
-    logging.info('Starting recalculate')
+def recalculate(wrap_up: bool):
+    logging.debug(f'Starting recalculate, wrap_up={wrap_up}')
     drone0 = drone_data_list[0]
     drone1 = drone_data_list[1] if not ONEDRONE else drone0
     if drone0.start_x is None or drone1.start_x is None:
@@ -77,10 +72,14 @@ def recalculate():
     if drone0.real_z() > 0.5 and drone1.real_z() > 0.5:
         logging.info('setting target for both drones')
         drone0.set_target(1, 2, 1)
-        drone1.set_target(drone0.x, drone0.y, drone0.z)
+        drone1.set_target(drone0.target_x, drone0.target_y, drone0.target_z)
         # h = drone0.heading(drone1)
         # x, y = drone0.relative(2, h)
         # drone1.set_target(x, y, 1)
+    if wrap_up:
+        # send negative target z to land the drone
+        drone0.target_z = -1.0
+        drone1.target_z = -1.0
     send_to_drone(drone0, 0)
     send_to_drone(drone1, 1)
 
@@ -91,59 +90,29 @@ def send_to_drone(drone_data: DroneData, id):
     :param drone_data:
     :return:
     """
-    logging.info(f'send_to_drone')
+    logging.debug(f'send_to_drone')
     if drone_data.ip != '':
-        logging.info(f'Client IP = {drone_data.ip}')
-        PORT = CLIENT_PORT if id == 0 else CLIENT_PORT2
-        try:
-            response = requests.get(f'http://{drone_data.ip}:{PORT}/drone_target', params=drone_data.string_dict())
-            if response.status_code != 200:
-                logging.warning(f'Error code sending request {response.status_code}')
-            else:
-                logging.info(f'Successfully sent drone_data: {drone_data}')
-                logging.info(f'Client response: {response.content}')
-        except (requests.exceptions.RequestException, ConnectionError) as err:
-            logging.warning(f'Error sending request to Client: {err}')
+        port = CLIENT0_PORT if id == 0 else CLIENT1_PORT
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            data = struct.pack('fff', drone_data.target_x, drone_data.target_y, drone_data.target_z)
+            b = s.sendto(data, (drone_data.ip, int(port)))
+            logging.info(
+                f'Sent {b} bytes with {(drone_data.target_x, drone_data.target_y, drone_data.target_z)} to {drone_data.ip}:{port}')
     else:
         logging.warning('No Client IP address yet')
 
 
-def optitrack():
-    sock = socket.socket(socket.AF_INET,  # Internet
-                         socket.SOCK_DGRAM)  # UDP
-    sock.bind((OPTI_IP, UDP_PORT))
-
-    while True:
-        data, addr = sock.recvfrom(1024)  # buffer size is 1024 bytes
-        # print("received message: %s" % data)
-        [a, b, c, d, e, f, g, h] = struct.unpack('ffffffff', data)  # convert the received data from char to float
-        logging.debug(f'from optitrack: {[a, b, c, d, e, f, g, h]}')
-        x = -a
-        y = c
-        z = b
-        roll = -d
-        yaw = e
-        pitch = -f
-        bodyID = g
-        framecount = h
-        drone_id = int(bodyID)
-        drone_data_list[drone_id].opti_x = x
-        drone_data_list[drone_id].opti_y = y
-        drone_data_list[drone_id].opti_z = z
-        if drone_data_list[drone_id].start_x is None:
-            drone_data_list[drone_id].start_x = x
-        if drone_data_list[drone_id].start_y is None:
-            drone_data_list[drone_id].start_y = y
-        if drone_data_list[drone_id].start_z is None:
-            drone_data_list[drone_id].start_z = z
+def main():
+    logging.basicConfig(level=logging.DEBUG)
+    logging.info('Starting drone_data_listener')
+    wrap_up = False
+    t1 = threading.Thread(target=drone_data_listener, args=(lambda: wrap_up,))
+    t1.start()
+    input('Press enter to end and land the drones')
+    value = wrap_up = True
+    t1.join()
+    logging.info('Finished')
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    if OPTITRACK:
-        thread = threading.Thread(target=optitrack)
-        thread.start()
-    # while True:
-    #     time.sleep(1)
-    logging.info('Starting web server')
-    app.run(host='0.0.0.0', port=int(BRAIN_PORT), debug=True)
+    main()
